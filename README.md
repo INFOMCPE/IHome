@@ -1,2 +1,2 @@
 # IHome
-Система домов для вашего сервера mcpe
+Home system for your mcpe server
