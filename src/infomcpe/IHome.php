@@ -9,7 +9,7 @@ use pocketmine\utils\Config;
 use pocketmine\event\Listener;
 use pocketmine\utils\Utils; 
 use pocketmine\math\Vector3;
-
+use pocketmine\utils\TextFormat as TF;
 
 class IHome extends PluginBase implements Listener {
      const Prfix = '§f[§aIHome§f]§e ';
@@ -19,17 +19,23 @@ class IHome extends PluginBase implements Listener {
             $this->session = $this->getServer()->getPluginManager()->getPlugin("SessionAPI");
             $this->pureperms = $this->getServer()->getPluginManager()->getPlugin("PurePerms");
             if ($this->getServer()->getPluginManager()->getPlugin("PluginDownloader")) {
-            $this->getServer()->getScheduler()->scheduleAsyncTask(new CheckVersionTask($this, 0));
+            $this->getServer()->getScheduler()->scheduleAsyncTask(new CheckVersionTask($this, 337));
+            }
             if(!file_exists($this->getDataFolder()."groups.json")){
                 $this->saveResource("groups.json");
             }
+            if(!file_exists($this->getDataFolder()."homes.db")){
+                 $this->saveResource("homes.db");
+                 $this->getLogger()->info("База данных успешно создана");
+            }
+            
             $this->groups = json_decode(file_get_contents($this->getDataFolder()."groups.json"), true);
             if($this->session == NULL){
                if($this->getServer()->getPluginManager()->getPlugin("PluginDownloader")->getDescription()->getVersion() >= '1.4'){
                    $this->getServer()->getPluginManager()->getPlugin("PluginDownloader")->installByID('SessionAPI');
                }
             }
-        }
+        
          $this->getServer()->getPluginManager()->registerEvents($this, $this);
    }
      public function onCommand(CommandSender $player, Command $command, $label, array $args){
@@ -41,7 +47,7 @@ class IHome extends PluginBase implements Listener {
                         switch (strtolower($args[0])) {
                             case 'sethome':
                                 if(!is_null($args[1])){
-                                    if(is_null($this->getHomeXYZ($args[1]))){
+                                    if(is_null($this->getOwner($args[1]))){
                                     if( $this->getData($player->getName()) <= $this->groups[$this->pureperms->getUserDataMgr()->getGroup($player)->getName()]){
                                          $this->session->createSession($player->getName(), $this->getName().'_scope', 1);
                                          $this->session->createSession($player->getName(), $this->getName().'_homename', strtolower($args[1]));
@@ -58,28 +64,37 @@ class IHome extends PluginBase implements Listener {
                                 break;
                             case 'setpublic':
                                 if (!is_null($args[1])) {
+                                    if(!is_null($this->getOwner($args[1]))){
                                    if(strtolower($player->getName()) == $this->getOwner($args[1])){
                                        $this->setPrivate($args[1], FALSE);
                                        $player->sendMessage(IHome::Prfix."Успешно. Дом {$args[1]} стал публичным");
                                    }else{
                                         $player->sendMessage(IHome::Prfix.'Дом который вы пытаитесь сделать публичным не ваш');
                                    }
+                                    }else{
+                                        $player->sendMessage(IHome::Prfix."Ошибка. Дом не найден");
+                                    }
                                 }else{
                                     $player->sendMessage(IHome::Prfix.'Укажите название');
                                 }
                                 break;
                                  case 'setprivate':
                                 if (!is_null($args[1])) {
+                                     if(!is_null($this->getOwner($args[1]))){
                                    if(strtolower($player->getName()) == $this->getOwner($args[1])){
                                        $this->setPrivate($args[1], true);
                                        $player->sendMessage(IHome::Prfix."Успешно. Дом {$args[1]} стал приватным");
                                    } 
+                                     }else{
+                                         $player->sendMessage(IHome::Prfix."Ошибка. Дом не найден");
+                                     }
                                 }else{
                                     $player->sendMessage(IHome::Prfix.'Укажите название');
                                 }
                                 break;
                             case 'tp':
                                 if(!is_null($args[1])){
+                                    if(!is_null($this->getOwner($args[1]))){
                                         if(strtolower($player->getName()) == $this->getOwner($args[1])){
                                             $xyz = explode(':', $this->getHomeXYZ($args[1]));
                                             $player->Teleport( new Vector3($xyz[0], $xyz[1] + 1, $xyz[2]));
@@ -91,10 +106,14 @@ class IHome extends PluginBase implements Listener {
                                         } else if($this->getPrivate($args[1]) == true){
                                             $player->sendMessage(IHome::Prfix."Этот дом не публичный, попасть в него не возможно");
                                         }
-                                    }
+                                    }else{
+                                        $player->sendMessage(IHome::Prfix."Ошибка. Дом не найден");
+                                }
+                                }else{
+                                    $player->sendMessage(IHome::Prfix."Укажите название");
+                                }
                                 break;
                             case 'delhome':
-                                if(!$player->hasPermission('ihome.delhome')){
                                     if(!is_null($args[0])){
                                         if(!is_null($this->getOwner($args[1]))){
                                         if(strtolower($player->getName()) == strtolower($this->getOwner($args[1]))){
@@ -104,14 +123,23 @@ class IHome extends PluginBase implements Listener {
                                             $player->sendMessage(IHome::Prfix.'Дом который вы пытаитесь удалить не ваш');
                                         }
                                         }else{
-                                            $player->sendMessage('Ошибка. Дом не найден');
+                                            $player->sendMessage(IHome::Prfix.'Ошибка. Дом не найден');
                                         }
                                     }else{
                                         $player->sendMessage(IHome::Prfix."Укажите название дома");
                                     }
-                                }else{
-                                     $this->delHome($args[1]);
+                               
+                                break;
+                            case 'list':
+                                $player->sendMessage(IHome::Prfix."Весь список публичных домов:");
+                                $result = $this->db()->query("SELECT * FROM `homes`;");
+                                 $sendData = [];
+                                 while ($list = $result->fetchArray(SQLITE3_ASSOC)) {
+                                     if($list['private'] == 0){
+                                         $sendData[] = $list['home'];
+                                     }
                                 }
+                                $player->sendMessage(TF::YELLOW.implode(", ", $sendData));
                                 break;
                           
                            
@@ -132,11 +160,17 @@ class IHome extends PluginBase implements Listener {
                         case 'delhome':
                                 $this->getServer()->dispatchCommand($player, 'ih delhome '.$args[0]);
                                 break;
+                        case 'homes':
+                                $this->getServer()->dispatchCommand($player, 'ih list');
+                                break;
                 }
      }
+     public function db() {
+          return new \SQLite3($this->getDataFolder()."homes.db");
+     }
      public function delHome($home) {
-        $this->dataSave('data',$this->getOwner($home), $this->dataGet('data', $this->getOwner($home)) - 1);
-        unlink($this->getDataFolder().'home/'.$home.'.json');
+         $this->dataSave('data',$this->getOwner($home), $this->dataGet('data', $this->getOwner($home)) - 1);
+         $this->db()->query("DELETE FROM `homes` WHERE  `home`='{$home}'");
      }
      public function addData($player, $data) {
          if(is_null($this->dataGet('data', $player))){
@@ -149,20 +183,31 @@ class IHome extends PluginBase implements Listener {
          return $this->dataGet('data', $player);
      }
      public function getOwner($home) {
-          return strtolower($this->dataGet($home, 'owner'));  
+         $result = $this->db()->query("SELECT * FROM `homes` where home = '{$home}'")->fetchArray(SQLITE3_ASSOC);
+         return $result['owner'];
      }
+     
      public function getHomeXYZ($home) {
-         return $this->dataGet($home, 'xyz');
+          $result = $this->db()->query("SELECT * FROM `homes` where home = '{$home}'")->fetchArray(SQLITE3_ASSOC);
+         return $result['x'].":".$result['y'].":".$result['z'];
      }
      public function setPrivate($home, $type) {
-         $this->dataSave($home, 'private', $type);
+         switch ($type) {
+             case true:
+                 $this->db()->query("UPDATE `homes` SET `private`='1' WHERE  `home`='{$home}'");
+                 break;
+              case FALSE:
+                 $this->db()->query("UPDATE `homes` SET `private`='0' WHERE  `home`='{$home}'");
+                 break;
+         }
      }
      public function getPrivate($home) {
-         return $this->dataGet($home, 'private');
+         $result = $this->db()->query("SELECT * FROM `homes` where home = '{$home}'")->fetchArray(SQLITE3_ASSOC);
+         return $result['private'];
      }
      public function createHome($home, $player, $xyz) {
-         $this->dataSave($home, 'owner', $player);
-         $this->dataSave($home, 'xyz', $xyz);
+         $xyz = explode(":", $xyz);
+         $this->db()->query("INSERT INTO `homes` (`home`, `owner`, `x`, `y`, `z`) VALUES ('{$home}', '{$player}', '{$xyz[0]}', '{$xyz[1]}', '{$xyz[2]}');");
      }
       public function onPlayerTouch(PlayerInteractEvent $event){
          $player = $event->getPlayer();
